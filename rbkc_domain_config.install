@@ -1,0 +1,43 @@
+<?php
+
+function _rbkc_domain_config_create_taxonomy_term($name, $vid) {
+  $term = (object) array(
+    'name' => $name,
+    'vid' => $vid,
+  );
+  taxonomy_term_save($term);
+  return $term->tid;
+}
+
+/**
+ * Implements hook_install().
+ */
+function rbkc_domain_config_install() {
+
+  $promotions = (object) array(
+    'name' => 'Promotional categories',
+    'machine_name' => 'content_promotions',
+  );
+  taxonomy_vocabulary_save($promotions);
+
+  $promotions_vocab = taxonomy_vocabulary_machine_name_load('content_promotions');
+  $promotions_terms = Array(
+    'Home page carousel',
+    'Home page featured image',
+    'Home page grid',
+  );
+  foreach ($promotions_terms as $term) {
+    _rbkc_domain_config_create_taxonomy_term($term, $promotions_vocab->vid);
+  }
+
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function rbkc_domain_config_uninstall() {
+
+  $promotions = taxonomy_vocabulary_machine_name_load('content_promotions');
+  taxonomy_vocabulary_delete($promotions->vid);
+
+}

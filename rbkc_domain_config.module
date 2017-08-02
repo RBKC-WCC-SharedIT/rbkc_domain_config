@@ -1,0 +1,189 @@
+<?php
+
+/**
+ * @file this module allows custom configuration for Domain Access sites
+ *
+ * A configuration option is added under domain settings to define which 'promotional' options are
+ * available to each domain, based on a set of taxonomy terms.  This allows us to reuse content types
+ * and show only promotional options relevant to each site (so one site can promote a node to a
+ * carousel, but another can promote it to a grid of teasers ).
+ *
+ * This module also incorporates a fix for lack of domain-specific WYSIWYG CSS.
+ */
+
+
+/**
+ * @return array|bool
+ */
+function _rbkc_domain_config_get_promotion_types() {
+
+  $vocab = taxonomy_vocabulary_machine_name_load('content_promotions');
+
+  if ($vocab) {
+    $vid = $vocab->vid;
+    $terms = taxonomy_get_tree($vid);
+
+    if ($terms) {
+      $options = array();
+
+      foreach ($terms as $term) {
+        $key = _rbkc_domain_config_slugify($term->name);
+        $options[$key] = $term->name;
+      }
+
+      return $options;
+    }
+
+    return FALSE;
+  }
+}
+
+/**
+ * Replaces uppercase characters with lowercase, and replaces spaces with underscores
+ * @param string $item
+ * @return string
+ */
+function _rbkc_domain_config_slugify($item) {
+  return is_string($item) ?  strtolower(str_replace(" ", "_", $item)) : NULL;
+}
+
+/**
+ * Implements hook_domain_conf
+ * @return mixed
+ */
+function rbkc_domain_config_domain_conf() {
+
+    $options =  _rbkc_domain_config_get_promotion_types();
+
+    if ($options) {
+
+      $form['promotions']['#domain_setting'] = TRUE;
+
+      $form['promotions'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Promotional settings'),
+        '#collapsible' => TRUE,
+        '#collapsed' => FALSE,
+      );
+      $form['promotions']['promotion_select'] = array(
+        '#type' => 'checkboxes',
+        '#title' => t('Select node promotion types available for this domain'),
+        '#options' => $options,
+        '#default_value' => variable_get('promotion_select', ''),
+      );
+
+    }
+
+    return $form;
+}
+
+/**
+ * Returns configured promotional options, if any
+ * @return array|null
+ */
+function _rbkc_domain_config_domain_promotions() {
+
+  $domain = domain_get_domain();
+  $domain_conf = domain_conf_data_get($domain['domain_id']);
+
+  if (isset($domain_conf['promotion_select'])) {
+    $domain_has_promotions = (bool) array_filter($domain_conf['promotion_select']);
+
+    if ($domain_has_promotions) {
+      return $domain_conf['promotion_select'];
+    }
+
+  }
+
+  return NULL;
+}
+
+/**
+ * Sets the configured promotion options for this domain
+ *
+ * @param $form
+ * @param $domain_promotions
+ */
+function _rbkc_domain_config_set_promotional_options(&$form, $domain_promotions) {
+
+  $form_options = $form['field_promote_to'][LANGUAGE_NONE]['#options'];
+  $promotions = array_filter(array_values($domain_promotions));
+
+  foreach ($form_options as $key => $option) {
+    $option = _rbkc_domain_config_slugify($option);
+
+    if (! in_array($option, $promotions)) {
+      unset($form_options[$key]);
+    }
+
+  }
+
+  $form['field_promote_to'][LANGUAGE_NONE]['#options'] = $form_options;
+}
+
+/**
+ * Implements hook_form_node_form_alter
+ *
+ * @param $form
+ * @param $form_state
+ * @param $form_id
+ */
+function rbkc_domain_config_form_node_form_alter(&$form, &$form_state, $form_id) {
+
+  if (isset($form['field_promote_to'])) {
+
+    $domain_promotions = _rbkc_domain_config_domain_promotions();
+
+    if (! $domain_promotions) {
+      $form['field_promote_to']['#access'] = FALSE;
+
+      if (isset($form['field_promotional_settings'])) {
+        $form['field_promotional_settings']['#access'] = FALSE;
+      }
+
+    }
+
+    else {
+      _rbkc_domain_config_set_promotional_options($form, $domain_promotions);
+    }
+
+  }
+
+}
+
+/**
+ * domain access wysiwyg css hack as per https://www.drupal.org/node/1976536
+ *
+ * @return array
+ */
+function rbkc_domain_config_menu() {
+  $items = array();
+
+  $items['rbkc_domain_config_load_domain_css/%rbkc_domain_config_css'] = array(
+    'title' => 'Fix Domain Access wysiwyg css issue',
+    'page callback' => 'rbkc_domain_config_return_domain_css',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+    'load arguments' => array('%map', '%index'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+function rbkc_domain_config_css_load($arg, $map, $index) {
+  // Grab everything in the path starting with the CSS value (second argument)
+  $css_path = implode('/', array_slice($map, $index));
+  return $css_path;
+}
+
+function rbkc_domain_config_return_domain_css($my_css_path){
+  global $theme;
+  $style_path = drupal_get_path("theme",$theme)."/".$my_css_path;
+  if(file_exists($style_path)){
+    header("content-type:text/css");
+    print file_get_contents($style_path);
+  } else {
+    print "css file not found :".$style_path;
+  }
+}

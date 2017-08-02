@@ -1,0 +1,5 @@
+name = RBKC Domain Config
+description = Configure settings on a domain-by-domain basis
+core = 7.x
+package = RBKC
+
